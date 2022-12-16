@@ -15,7 +15,8 @@ def look_data(path):
     df = read_parquet('./filter/' + path)
     # df['len'] = df['NEWS_SUMMARY'].apply(lambda x: len(x))
     print(len(df))
-    # print(df[-10:])
+    # print(df.columns)
+    print(df.head())
     # df = df[['NEWS_ORIGIN_SOURCE', 'NEWS_TITLE']]
     # for index, row in df.iterrows():
     #     a, b = row['NEWS_ORIGIN_SOURCE'], row['NEWS_TITLE']
@@ -84,7 +85,8 @@ if __name__ == '__main__':
 
     file_pos = 0
     # 数据观察
-    look_data('vnews_tag.parquet')
+    # look_data('vnews_tag.parquet')
+    look_data('vnews_tag_1.parquet')
 
     # 时间跨度观察
     # news_withdata()
@@ -111,7 +113,7 @@ if __name__ == '__main__':
     # for index, row in df.iterrows():
     #     print(row['NEWS_SUMMARY'])
 
-    tag2list()
+    # tag2list()
 
 '''
     前期数据
@@ -126,5 +128,5 @@ if __name__ == '__main__':
     sig.csv                           预测股票标签 2900+
     
     模型预测
-    vnews_tag.parquet                 新闻与预测标签（步骤1：分类）  
+    vnews_tag.parquet                 新闻与预测标签（步骤1：分类）  7070721
 '''

@@ -177,14 +177,30 @@ def combine_data1():
             res[a].append(b)
     print('stock list is finished')
 
-    # def fun(x):
-    #     s = str(x[0])
-    #     for i in range(1, len(x)):
-    #         s += ',' + str(x[i])
-    #     return s
+    def fun(x):
+        s = str(x[0])
+        for i in range(1, len(x)):
+            s += ',' + str(x[i])
+        return s
 
-    df['label'] = df['NEWS_ID'].apply(lambda x: res[x])
+    # df['label'] = df['NEWS_ID'].apply(lambda x: res[x])
+    df['label'] = df['NEWS_ID'].apply(lambda x: fun(res[x]))
     df.to_parquet('filter/vnews_tag.parquet')
+
+
+# 补救措施
+# def combine_data1_add():
+#     df = read_parquet('./filter/vnews_tag.parquet')
+#
+#     def fun(x):
+#         s = str(x[0])
+#         for i in range(1, len(x)):
+#             s += ',' + str(x[i])
+#         return s
+#
+#     df['label'] = df['label'].apply(lambda x: fun(x))
+#     df.reset_index(drop=True)
+#     df.to_parquet('filter/vnews_tag.parquet')
 
 
 if __name__ == '__main__':
@@ -201,4 +217,5 @@ if __name__ == '__main__':
     # look_data(file_names[file_pos], 2)
 
     # filter_data()
-    combine_data1()
+    # combine_data1()
+    # combine_data1_add()
