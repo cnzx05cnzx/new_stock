@@ -1,0 +1,33 @@
+market:
+    deal.csv 股票市场数据
+    reference.csv 股票基准
+    stock.csv   内部股票简称对应id
+    id2id.json 外部股票id对应该表股票id
+    id2onehot.json 内部股票id转为onthot（新闻标签预测）
+    id2stock.json 所有内部股票简称对应id
+
+filter：
+    vnews_tag.parquet 新闻预测标签使用数据
+
+after_data:
+    原数据经过处理
+
+
+    前期数据
+    md_security                       股票机构信息    1416998类   177400类(有效)  19499类(频繁类)
+    news_security_score.parquet       新闻股票对应   82203860    28523727(去重)
+    news_tag_v1.parquet               新闻标签(暂不用)
+    vnews_content_nondupbd.parquet    普通新闻
+    vnews_nondupbd_flash.parquet      快讯新闻
+    vnews_nondupbd_wechat.parquet     微信新闻      Counter({'普通微信号': 1917358, '上市公司微信号': 568848, '非宏观券商微信号': 56243, None: 205})
+    vnews_nondupbd.parquet            新闻内容整合  时间跨度2019-01-01 ~~ 2022-12-07
+    vnews_summary_v1.parquet          新闻主体    15G  1亿
+    vnews_summary.parquet             新闻主体    4G  0.27亿
+    sig.csv                           预测股票标签 2900+
+
+    模型预测
+    vnews_tag.parquet                 新闻与预测标签（步骤1：分类）  7070721  2810(类) 最多（824）
+    vnews_stock.parquet               新闻与股票预测（3分类）
+    vnews_stock_filter.parquet        新闻与股票预测（只包含涨跌信息数据）
+
+
