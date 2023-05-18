@@ -1,7 +1,7 @@
 import json
 
 import pandas as pd
-
+import torch
 import os
 from collections import defaultdict, Counter
 from pandas import read_parquet, read_csv
@@ -10,32 +10,32 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 
 def fun():
-    df = read_parquet('./filter/vnews_stock.parquet')
-    df['len'] = df['content'].apply(lambda x: len(str(x)))
-    print(df['len'].describe([.5, .7, .9]))
-    # print(len(df2))
-    # print(df.head())
-    # print(df2.head())
-    # def get_stock(a):
-    #     a = list(a)
-    #     r = []
-    #     for index, t in enumerate(a):
-    #         if t == '1':
-    #             r.append(index)
-    #     return r
-    #
-    # df['stock'] = df['label'].apply(lambda x: get_stock(x))
-    # df.reset_index(drop=True)
-    # df.to_parquet('filter/vnews_tag1.parquet')
+    df = read_parquet('./after_data/news_tag_v1.parquet')
+
+    # df = df[df['IS_POLICY'] == True]
+    ref = read_parquet('./after_data/vnews_summary.parquet')
+
+    tp = pd.merge(df, ref)
+    print(tp.head())
+    tp = tp[tp['NEWS_GENRE'] == '普通新闻']
+    for index, row in tp[:100].iterrows():
+        print(row['NEWS_SUMMARY'])
 
 
 def look_data():
-    df = pd.read_parquet('./filter/vnews_stock.parquet')
-
-    print(df.head())
+    df = read_parquet('./filter/vnews_stock_merge2.parquet')
+    # df = read_parquet('./market/index000905_pct2_t-1close_buy_t+1closesell.parquet')
+    # df = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
+    # df = pd.read_csv('./market/dataset_day.csv')
     print(len(df))
-    # df = read_parquet('./after_data/' + path)
-    # df=df[['content','label']]
+    print(df.head())
+    # res=df.groupby(['date', 'stock_id'])
+    # print(len(res))
+    # df = read_parquet('./filter/vnews_stock_split.parquet')
+    # df = df[df['date'].str.contains('2022-09')]
+    # print(df.head())
+    for index, item in df[:100].iterrows():
+        print(item['date'])
 
 
 def news_withdata():
@@ -69,30 +69,9 @@ def news_withpublish():
     print(len(data))
 
 
-def news_withtag():
-    tag = read_parquet('./filter/vnews_stock.parquet')
-
-    res = [x for x in tag['SECURITY_INT_ID'].apply(lambda x: x)]
-    res = set(res)
-    print(len(res))
-
-
-def tag2list():
-    tag = read_parquet('./after_data/md_security.parquet')
-
-    res1, res2 = {}, {}
-
-    for index, row in tag.iterrows():
-        res1[int(row['SECURITY_ID'])] = row['SEC_SHORT_NAME']
-        res2[row['SEC_SHORT_NAME']] = row['SECURITY_ID']
-
-    dict_json1 = json.dumps(res1, ensure_ascii=False)
-    dict_json2 = json.dumps(res2, ensure_ascii=False)
-
-    # 将json文件保存为.json格式文件
-
-    with open('./market/id2stock.json', 'w+', encoding='utf-8') as file:
-        file.write(dict_json1)
+def hot_compute():
+    df = pd.DataFrame({'a': [1, 2, 3], 'b': [1, 2, 4]})
+    print(df)
 
 
 # 查看deal市场股票id与打标数据是否一致
@@ -142,24 +121,15 @@ if __name__ == '__main__':
                   5: 'vnews_nondupbd_wechat.parquet',
                   6: 'vnews_summary_v1.parquet'}
 
-    file_pos = 3
     # stockid()
 
     # 数据观察
-    # look_data(file_names[file_pos])
     # look_data('vnews_tag.parquet')
     look_data()
-    # new_deal()
+    # fun()
 
     # 时间跨度观察
     # news_withdata()
 
-    # 新闻机构观察
-    # news_withpublish()
-
-    # 新闻对应标签
-    # news_withtag()
-    # with open('./after_data/stock.json', 'r+', encoding='utf-8') as file:
-    #     content = file.read()
-    #
-    # content = json.loads(content)
+    # hot_compute()
+    # print(torch.cuda.is_available())

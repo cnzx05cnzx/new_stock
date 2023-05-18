@@ -1,15 +1,17 @@
 import datetime
 import json
+import math
 import time
 
+import numpy as np
 import pandas as pd
 import os
 
 from pandas import read_parquet
-from collections import defaultdict
+from collections import defaultdict, Counter
 from tqdm import tqdm
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
 """
 这部分统一不同文件中的股票代码
@@ -89,31 +91,31 @@ def parquet_csv(path):
     df.to_parquet('after_data/' + name + '.parquet')
 
 
-# 将快讯，微信，普通新闻整合
+# 将快讯，微信，普通新闻整合(过滤快讯新闻)
 def merge_data():
     df1 = read_parquet('./after_data/vnews_content_nondupbd.parquet')
-    df2 = read_parquet('./after_data/vnews_nondupbd_flash.parquet')
-    df3 = read_parquet('./after_data/vnews_nondupbd_wechat.parquet')
-    print(len(df1) + len(df2) + len(df3))
-    df = pd.concat([df1, df2, df3])
+    df2 = read_parquet('./after_data/vnews_nondupbd_wechat.parquet')
+    # df3 = read_parquet('./after_data/vnews_nondupbd_flash.parquet')
+    print(len(df1) + len(df2))
+    df = pd.concat([df1, df2])
     df['NEWS_ORIGIN_SOURCE'].fillna('未知', inplace=True)
     # print(df.head())
     df.to_parquet('after_data/vnews_nondupbd.parquet')
 
 
-# 新闻数据过滤
-def filter_data():
+# 新闻数据过滤,预处理操作
+def filter_data1():
     df = read_parquet('./after_data/vnews_summary_v1.parquet')
     #
     # # 存在新闻标签过滤
     df1 = read_parquet('./after_data/vnews_content_nondupbd.parquet')
-    df2 = read_parquet('./after_data/vnews_nondupbd_flash.parquet')
-    df3 = read_parquet('./after_data/vnews_nondupbd_wechat.parquet')
+    df2 = read_parquet('./after_data/vnews_nondupbd_wechat.parquet')
+    # df3 = read_parquet('./after_data/vnews_nondupbd_flash.parquet')
     res1 = [x for x in df1['NEWS_ID'].apply(lambda x: x)]
     res2 = [x for x in df2['NEWS_ID'].apply(lambda x: x)]
-    res3 = [x for x in df3['NEWS_ID'].apply(lambda x: x)]
+    # res3 = [x for x in df3['NEWS_ID'].apply(lambda x: x)]
     res1.extend(res2)
-    res1.extend(res3)
+    # res1.extend(res3)
 
     # 存在股票标签过滤
     stock = pd.read_csv('./market/stock.csv', encoding='gbk')
@@ -230,7 +232,8 @@ def turn_onehot():
         content = file.read()
     content = json.loads(content)
 
-    def fun(s):
+    # 将label 根据stock进行标号
+    def fun1(s):
         # nonlocal content
         tmp = [x for x in s.split(',')]
         res = ['0'] * 2810
@@ -239,8 +242,18 @@ def turn_onehot():
         res = ''.join(res)
         return res
 
+    # 将stock 映射到对应标号
+    def fun2(s):
+        # nonlocal content
+        tmp = [x for x in s.split(',')]
+        res = []
+        for t in tmp:
+            res.append(content[t])
+        return res
+
     df.rename(columns={'label': 'stock'}, inplace=True)
-    df['label'] = df['stock'].apply(lambda x: fun(x))
+    df['label'] = df['stock'].apply(lambda x: fun1(x))
+    df['stock'] = df['stock'].apply(lambda x: fun2(x))
     df.reset_index(drop=True)
     df.to_parquet('filter/vnews_tag.parquet')
 
@@ -254,9 +267,10 @@ def add_title():
     tmp = pd.merge(left=df, right=addition, on="NEWS_ID")
     tmp['NEWS_SUMMARY'] = tmp['NEWS_TITLE'] + tmp['NEWS_SUMMARY']
     tmp = tmp[['NEWS_ID', 'NEWS_SUMMARY', 'label', 'stock', 'NEWS_ORIGIN_SOURCE', 'EFFECTIVE_TIME']]
-    tmp.to_parquet('filter/vnews_tag1.parquet')
+    tmp.to_parquet('filter/vnews_tag.parquet')
     print(len(tmp))
     t_b = time.time()
+    print(tmp.head())
     print('cost time {}'.format(t_b - t_a))
     # def cnt(id, text):
     #     add = addition[(addition['NEWS_ID'] == int(id))]
@@ -280,9 +294,15 @@ def add_title():
 
 # 处理deal前期数据，将其股票编号转为内部股票编号，同时删除数据中不存在的股票信息
 def filter_deal():
-    df = pd.read_csv('./market/deal.csv')
-    df = df[['date', 'order_book_id', 'pct1']]
-    df = df[(df['date'] >= '2019') & (df['date'] <= '2023')]
+    #  1 为中正，2 为正常
+    df1 = read_parquet('./market/index000905_pct2_t-1close_buy_t+1closesell.parquet')
+    df1.rename(columns={'pct2': 'ref_pct'}, inplace=1)
+    df1 = df1[['date', 'ref_pct']]
+    df1['date'] = df1['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+
+    df2 = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
+    df2['date'] = df2['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    df = pd.merge(df2, df1, on='date')
 
     with open('./market/id2id.json', 'r+', encoding='utf-8') as file:
         content = file.read()
@@ -293,13 +313,30 @@ def filter_deal():
     df = df[df['order_book_id'].isin(stock_lists) == True]
     # 股票代码替换
     df['order_book_id'] = df['order_book_id'].apply(lambda x: content[x])
-    # 删除参考数据中不存在的日期
-    ref = pd.read_csv('./market/reference.csv')
-    ref = ref[(ref['date'] >= '2019') & (ref['date'] <= '2023')]
-    date_list = set([x for x in ref['date'].apply(lambda x: str(x))])
-    df = df[df['date'].isin(date_list) == True]
+    df['ref_pct'] = df['pct2'] - df['ref_pct']
 
-    df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
+    df.to_csv('./market/deal1.csv', index=False, encoding='utf-8')
+    # before
+    # df = pd.read_csv('./market/')
+    # df = df[['date', 'order_book_id', 'pct1', 'pct3']]
+    # df = df[(df['date'] >= '2019') & (df['date'] <= '2023')]
+    #
+    # with open('./market/id2id.json', 'r+', encoding='utf-8') as file:
+    #     content = file.read()
+    # content = json.loads(content)
+    #
+    # stock_lists = set([k for k, v in content.items()])
+    # # 删除参考数据中不存在的股票
+    # df = df[df['order_book_id'].isin(stock_lists) == True]
+    # # 股票代码替换
+    # df['order_book_id'] = df['order_book_id'].apply(lambda x: content[x])
+    # # 删除参考数据中不存在的日期
+    # ref = pd.read_csv('./market/reference.csv')
+    # ref = ref[(ref['date'] >= '2019') & (ref['date'] <= '2023')]
+    # date_list = set([x for x in ref['date'].apply(lambda x: str(x))])
+    # df = df[df['date'].isin(date_list) == True]
+    #
+    # df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
 
 
 # 处理deal数据，通过reference基准,生成每天股票的基准标签
@@ -310,83 +347,54 @@ def compile_deal1():
     ref = ref[(ref['date'] >= '2019') & (ref['date'] <= '2023')]
 
     ref_data = {}
+    # pct1 pct3
     for index, row in ref.iterrows():
-        date, pct = row['date'], row['pct_1']
+        date, pct = row['date'], row['pct_3']
         ref_data[date] = pct
 
     df['ref_pct'] = df['date'].apply(lambda x: ref_data[str(x)])
-    df['ref_pct'] = df['pct1'] - df['ref_pct']
+    df['ref_pct'] = df['pct3'] - df['ref_pct']
 
-    df.sort_values('ref_pct', ascending=False)
-    q10 = df.quantile(.1, numeric_only=True).ref_pct
-    q90 = df.quantile(.9, numeric_only=True).ref_pct
+    # df.sort_values('ref_pct', ascending=False)
+    # q10 = df.quantile(.3, numeric_only=True).ref_pct
+    # q90 = df.quantile(.7, numeric_only=True).ref_pct
+    #
+    # def judge(x):
+    #     if x <= q10:
+    #         return 0
+    #     elif x <= q90:
+    #         return 1
+    #     else:
+    #         return 2
 
-    def judge(x):
-        if x <= q10:
-            return 0
-        elif x <= q90:
-            return 1
-        else:
-            return 2
-
-    df['label'] = df['ref_pct'].apply(lambda x: judge(x))
-    df = df[['date', 'order_book_id', 'pct1', 'ref_pct', 'label']]
+    # df['label'] = df['ref_pct'].apply(lambda x: judge(x))
+    # df = df[['date', 'order_book_id', 'pct1', 'ref_pct', 'label']]
+    df = df[['date', 'order_book_id', 'pct1', 'pct3', 'ref_pct']]
     df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
-    # res=sorted(set([x for x in df['date'].apply(lambda x:x)]))
-    # print(res)
 
 
-# 根据基准数据，对比相对于前一天的数据变化，生成真正的数据标签
-def compile_deal2():
+# 处理daydeal数据，筛选需要列表，同时替换对应的股票代号
+def compile_daydeal():
+    df = pd.read_csv('./market/dataset_day_pct2.csv')
+    df = df[['时间', '股票代码', 'pct2', 'ar2']]
+    df.rename(columns={'时间': 'date', '股票代码': 'order_book_id', 'ar2': 'ref_pct'}, inplace=True)
     with open('./market/id2id.json', 'r+', encoding='utf-8') as file:
         content = file.read()
     content = json.loads(content)
 
-    stock = [v for k, v in content.items()]
-    print(len(stock))
-    df = pd.read_csv('./market/deal.csv')
+    stock_lists = set([k for k, v in content.items()])
+    # 删除参考数据中不存在的股票,并替换存在的代码
+    df = df[df['order_book_id'].isin(stock_lists) == True]
+    df['order_book_id'] = df['order_book_id'].apply(lambda x: content[x])
 
-    res = {}
-    for s in stock:
-        tmp = df.copy()
-        tmp = tmp[tmp['order_book_id'] == s]
+    def fun(x):
+        tmp = time.strptime(x, "%Y/%m/%d")
+        tmp = time.strftime("%Y-%m-%d", tmp)
+        return tmp
 
-        # 根据排名变化1
-        # cnt = [x for x in tmp['label'].apply(lambda x: x)]
-        # 根据收益率变化
-        cnt = [x for x in tmp['ref_pct'].apply(lambda x: x)]
-        date = [x for x in tmp['date'].apply(lambda x: x)]
+    df['date'] = df['date'].apply(lambda x: fun(x))
 
-        tar = date[0] + '-' + str(s)
-        res[tar] = 1
-        tmp = cnt[0]
-        for i in range(1, len(cnt)):
-            tar = date[i] + '-' + str(s)
-            # 排名
-            # if tmp == cnt[i]:
-            #     res[tar] = 1
-            # elif tmp < cnt[i]:
-            #     res[tar] = 2
-            # else:
-            #     res[tar] = 0
-
-            # 收益率
-            if tmp < cnt[i]:
-                res[tar] = 1
-            else:
-                res[tar] = 0
-            tmp = cnt[i]
-    print('stock list is finish')
-
-    def judge(day, id):
-        tmp = day + '-' + str(id)
-        return res[tmp]
-
-
-#
-#     df['label'] = df.apply(lambda x: judge(x.date, x.order_book_id), axis=1)
-#     df = df[['date', 'order_book_id', 'pct1', 'label']]
-#     df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
+    df.to_csv('./market/dataset_day.csv', index=False, encoding='utf-8')
 
 
 # 将每条数据根据股票id拆分
@@ -402,7 +410,8 @@ def split_data():
         tmp = df.copy()
         tmp = tmp[tmp['len'] >= pos]
         tmp['stock_id'] = tmp['stock'].apply(lambda x: x[pos - 1])
-        tmp = tmp[['content', 'publish', 'date', 'stock_id']]
+        # tmp = tmp[['content', 'publish', 'date', 'stock_id']]
+        tmp = tmp[['NEWS_ID', 'content', 'publish', 'date', 'stock_id']]
         tmp.to_parquet('filter/vnews_stock{}.parquet'.format(pos))
 
 
@@ -418,19 +427,48 @@ def concat_stock():
     print(len(df4))
     print(len(df5))
     df = pd.concat([df1, df2, df3, df4, df5])
-    df.to_parquet('filter/vnews_stock.parquet')
 
+    # 过滤长度过少的新闻
+    df['len'] = df['content'].apply(lambda x: len(x))
+    df = df[df['len'] >= 20]
+    print(df['len'].describe())
 
-# 组合数据用来股票预测
-def combine_data2():
-    df = read_parquet('./filter/vnews_stock.parquet')
+    # 只保留普通类的新闻
+    addtion = read_parquet('./after_data/news_tag_v1.parquet')
+    addtion = addtion[['NEWS_ID', 'NEWS_GENRE']]
+    addtion = addtion[addtion['NEWS_GENRE'] == '普通新闻']
+    df = pd.merge(df, addtion)
+    print('merge one is finished')
+    df = df[['NEWS_ID', 'content', 'publish', 'date', 'stock_id']]
 
-    ref = pd.read_csv('./market/deal.csv')
-    ref = ref[['date', 'order_book_id', 'label']]
+    # 只保留2021，2022年的新闻只保留普通类的新闻
+    df = df[df['date'].str.contains('2022|2021')]
+
+    ref = pd.read_csv('./market/deal1.csv')
+    # ref = pd.read_csv('./market/dataset_day.csv')
+    # ref = ref[['date', 'order_book_id', 'label']]
+    ref = ref[['date', 'order_book_id', 'ref_pct', 'pct2']]
     ref.rename(columns={'order_book_id': 'stock_id'}, inplace=1)
+    print(len(df), len(ref))
     df = pd.merge(df, ref)
-    df = df[['date', 'publish', 'content', 'stock_id', 'label']]
+    print('merge two is finished')
+    print(len(df), len(ref))
+    df = df[['date', 'publish', 'content', 'stock_id', 'ref_pct', 'pct2']]
+
+    # 去重
     df = df.drop_duplicates(subset=['content'])
+    df = df.drop_duplicates(subset=['date', 'publish', 'stock_id'])
+
+    # 删除不知名发布者
+    res = [x for x in df['publish'].apply(lambda x: x)]
+    res = Counter(res)
+    res = sorted(res.items(), key=lambda d: d[1])
+    # print(res)
+    useful_publish = [k for k, v in res if v >= 200]
+    useful_publish.remove('未知')
+    # useful_publish.remove('')
+    # print(useful_publish)
+    df = df[df['publish'].isin(useful_publish) == True]
     df = df.reset_index(drop=True)
 
     # 生成新闻发布机构的onthot编码,初次使用生成
@@ -447,14 +485,106 @@ def combine_data2():
     content = json.loads(content)
     df['publish'] = df['publish'].apply(lambda x: content[x])
 
+    df.to_parquet('filter/vnews_stock_split.parquet')
+    print('split is finished')
+
+
+# 根据新闻热度等一系列特征，对新闻进行进一步的筛选过滤
+def filter_data2():
+    df = read_parquet('filter/vnews_stock_split.parquet')
+
+    df.to_parquet('filter/vnews_stock_split.parquet')
+
+
+# 组合数据用来股票预测,常规的bert使用(可能以热度进行筛选)
+def combine_data2_hot():
+    df = read_parquet('./filter/vnews_stock_split.parquet')
+
     # 将同一天的股票新闻与机构合并
     df1 = df.groupby(['date', 'stock_id'])['content'].apply(lambda grp: list(grp)).reset_index()
     df2 = df.groupby(['date', 'stock_id'])['publish'].apply(lambda grp: list(grp)).reset_index()
-    df3 = df.groupby(['date', 'stock_id'])['label'].apply(lambda grp: list(grp)[0]).reset_index()
+    # df3 = df.groupby(['date', 'stock_id'])['label'].apply(lambda grp: list(grp)[0]).reset_index()
+    df3 = df.groupby(['date', 'stock_id'])['ref_pct'].apply(lambda grp: list(grp)[0]).reset_index()
     df = pd.merge(df1, df2)
     df = pd.merge(df, df3)
     df['len'] = df['publish'].apply(lambda x: len(x))
-    df.to_parquet('filter/vnews_stock.parquet')
+    # df = df[['date', 'publish', 'content', 'stock_id', 'label', 'len']]
+    df = df[['date', 'publish', 'content', 'stock_id', 'ref_pct', 'len']]
+
+    # print(df.head())
+    df.to_parquet('filter/vnews_stock_merge.parquet')
+
+
+# 组合数据用来股票预测,使用词频作为特征(这部分特征计算时考虑全局的数据，到时候可能根据每个周期数据进行单独数据集特征计算)
+def combine_data2_frequent():
+    notice_word = set(
+        [sw.replace('\n', '') for sw in open('./market/output_hanlp.txt', encoding='utf-8').readlines()][:600])
+    # notice_word = set(
+    #     [sw.replace('\n', '') for sw in open('./market/output_chatglm.txt', encoding='utf-8').readlines()])
+    cnt = len(notice_word)
+    df = read_parquet('./filter/vnews_stock_split.parquet')
+
+    #  出现该词的文档数量,文档总数
+    show = [0] * cnt
+    num = len(df)
+    print(len(df))
+
+    # 计算词频特征
+    def fun1(s):
+        nonlocal show
+        res = [0] * cnt
+        for index, word in enumerate(notice_word):
+            if word in s:
+                res[index] += 1
+        show = list(map(lambda x: 1 + x[1] if x[0] > 0 else x[1], zip(res, show)))
+        return res
+
+    def fun2(s):
+        nonlocal show
+        for index, word in enumerate(s):
+            s[index] = s[index] * (math.log((1 + num) / (1 + show[index])) + 1)
+        res = sum([x ** 2 for x in s]) ** 0.5
+        if res > 0:
+            s = list(map(lambda x: round(x / res, 2), s))
+
+        return s
+
+    def fun3(s):
+        # 使用 多个值取max
+        multiple_lists = [t for t in s]
+        arrays = [np.array(x) for x in multiple_lists]
+        res = [max(k) for k in zip(*arrays)]
+
+        return res
+
+    # 单文档词频出现数
+    df['frquent'] = df['content'].apply(lambda x: fun1(x))
+    print('fruqent 1 is finish')
+    # tf-idf 计算值
+    df['frquent'] = df['frquent'].apply(lambda x: fun2(x))
+    print('fruqent 2 is finish')
+    # 将同一天的股票新闻与机构合并
+    df1 = df.groupby(['date', 'stock_id'])['frquent'].apply(lambda grp: fun3(grp)).reset_index()
+    df2 = df.groupby(['date', 'stock_id'])['ref_pct'].apply(lambda grp: list(grp)[0]).reset_index()
+    res = pd.merge(df1, df2)
+    # del df1, df2
+
+    # 过滤较少数据的项目
+    df3 = df.groupby(['date', 'stock_id'])['pct2'].apply(lambda grp: list(grp)).reset_index()
+    df3['len'] = df3['pct2'].apply(lambda x: len(x))
+    df3['pct2'] = df3['pct2'].apply(lambda x: x[0])
+    df3 = df3[df3['len'] >= 3].reset_index()
+    res = pd.merge(res, df3)
+
+    print(len(res))
+    # df = df[['date', 'frquent', 'stock_id', 'ref_pct','pct1']]
+    res = res[['date', 'frquent', 'stock_id', 'ref_pct', 'pct2']]
+
+    # hanlp
+    res.to_parquet('filter/vnews_stock_merge2.parquet')
+
+    # chatglm
+    # df.to_parquet('filter/vnews_stock_merge3.parquet')
 
 
 if __name__ == '__main__':
@@ -466,18 +596,20 @@ if __name__ == '__main__':
     # 数据初步筛选
     # file_pos = 3
     # merge_data()
-    # parquet_csv('before_data/' + file_names[file_pos])
-    # print('{} is finished'.format(file_names[file_pos]))
-    # look_data(file_names[file_pos], 2)
+    # filter_data1()
+    # comple_stock()
+    # filter_stock()
 
-    # filter_data()
     # combine_data1()
-    # combine_data1_add()
+    # make_onehot()
     # turn_onehot()
     # add_title()
 
     # filter_deal()
     # compile_deal1()
+    # compile_daydeal()
     # split_data()
     # concat_stock()
-    combine_data2()
+    # filter_data2()
+    # combine_data2_hot()
+    combine_data2_frequent()

@@ -5,6 +5,9 @@ market:
     id2id.json 外部股票id对应该表股票id
     id2onehot.json 内部股票id转为onthot（新闻标签预测）
     id2stock.json 所有内部股票简称对应id
+    index000905_pct2_t-1close_buy_t+1closesell.parquet  date,pct2(超额收益率)  中正500
+    pct2_t-1close_buy_t+1closesell.parquet              全部股票
+
 
 filter：
     vnews_tag.parquet 新闻预测标签使用数据
@@ -29,5 +32,7 @@ after_data:
     vnews_tag.parquet                 新闻与预测标签（步骤1：分类）  7070721  2810(类) 最多（824）
     vnews_stock.parquet               新闻与股票预测（3分类）
     vnews_stock_filter.parquet        新闻与股票预测（只包含涨跌信息数据）
+
+    '普通新闻': 53778878, None: 5587003, '公告新闻': 2827581, '价格动态': 2344938}
 
 
