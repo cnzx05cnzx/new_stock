@@ -1,3 +1,4 @@
+import datetime
 import json
 
 import pandas as pd
@@ -23,19 +24,24 @@ def fun():
 
 
 def look_data():
-    df = read_parquet('./filter/vnews_stock_merge2.parquet')
+    # df = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
     # df = read_parquet('./market/index000905_pct2_t-1close_buy_t+1closesell.parquet')
     # df = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
-    # df = pd.read_csv('./market/dataset_day.csv')
-    print(len(df))
-    print(df.head())
-    # res=df.groupby(['date', 'stock_id'])
+    df1 = read_parquet('./filter/vnews_stock_merge.parquet')
+    # df2 = read_parquet('./filter/vnews_stock.parquet')
+    # df['date']=pd.to_datetime(df['date'])
+
+    # print(len(df))
+    print(df1.head())
+    # print(df2.head())
+
     # print(len(res))
     # df = read_parquet('./filter/vnews_stock_split.parquet')
-    # df = df[df['date'].str.contains('2022-09')]
+    # df = df[df['date'].contains('2022-09-11')]
     # print(df.head())
-    for index, item in df[:100].iterrows():
-        print(item['date'])
+    # print(len(df))
+    for index, item in df1[:10].iterrows():
+        print(item['ref_pct'])
 
 
 def news_withdata():

@@ -241,7 +241,7 @@ if __name__ == '__main__':
     print("device {}".format(device))
 
     model = Muti_cla()
-    # model.load_state_dict(torch.load('./model/multicla.pkl'))
+    # model.load_state_dict(torch.load('./model/vnews_tag.pkl'))
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.LEARNING_RATE)

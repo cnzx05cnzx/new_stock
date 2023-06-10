@@ -9,7 +9,6 @@ import os
 
 from pandas import read_parquet
 from collections import defaultdict, Counter
-from tqdm import tqdm
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
@@ -294,14 +293,25 @@ def add_title():
 
 # 处理deal前期数据，将其股票编号转为内部股票编号，同时删除数据中不存在的股票信息
 def filter_deal():
-    #  1 为中正，2 为正常
-    df1 = read_parquet('./market/index000905_pct2_t-1close_buy_t+1closesell.parquet')
-    df1.rename(columns={'pct2': 'ref_pct'}, inplace=1)
+    #  1 为中正基准，2 为正常股票市场
+    # 计算策略,标签这里采用t+10（t+10，t+5，t+3，t+1）
+    tar = 3
+    tar_pct = {
+        1: ['pct_1', 'pct1'],
+        3: ['pct_3', 'pct3'],
+        5: ['pct_5', 'pct5'],
+        10: ['pct_10', 'pct10'],
+    }
+    df1 = pd.read_csv('./market/000905pct.csv')
+    df1.rename(columns={tar_pct[tar][0]: 'ref_pct'}, inplace=1)
     df1 = df1[['date', 'ref_pct']]
-    df1['date'] = df1['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    # df1['date'] = df1['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
 
-    df2 = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
-    df2['date'] = df2['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
+    df2 = pd.read_csv('./market/stock_pct2020.csv')
+    df2 = df2[['date', tar_pct[tar][1], 'stock_id']]
+    df2.rename(columns={'stock_id': 'order_book_id', tar_pct[tar][1]: 'pct'}, inplace=1)
+    # df2 = read_parquet('./market/pct2_t-1close_buy_t+1closesell.parquet')
+    # df2['date'] = df2['date'].apply(lambda x: x.strftime('%Y-%m-%d'))
     df = pd.merge(df2, df1, on='date')
 
     with open('./market/id2id.json', 'r+', encoding='utf-8') as file:
@@ -311,11 +321,11 @@ def filter_deal():
     stock_lists = set([k for k, v in content.items()])
     # 删除参考数据中不存在的股票
     df = df[df['order_book_id'].isin(stock_lists) == True]
-    # 股票代码替换
+    # 股票代码替换,标签这里采用t+10，t+5，t+3，t+1
     df['order_book_id'] = df['order_book_id'].apply(lambda x: content[x])
-    df['ref_pct'] = df['pct2'] - df['ref_pct']
+    df['ref_pct'] = df['pct'] - df['ref_pct']
 
-    df.to_csv('./market/deal1.csv', index=False, encoding='utf-8')
+    df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
     # before
     # df = pd.read_csv('./market/')
     # df = df[['date', 'order_book_id', 'pct1', 'pct3']]
@@ -337,64 +347,6 @@ def filter_deal():
     # df = df[df['date'].isin(date_list) == True]
     #
     # df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
-
-
-# 处理deal数据，通过reference基准,生成每天股票的基准标签
-def compile_deal1():
-    df = pd.read_csv('./market/deal.csv')
-
-    ref = pd.read_csv('./market/reference.csv')
-    ref = ref[(ref['date'] >= '2019') & (ref['date'] <= '2023')]
-
-    ref_data = {}
-    # pct1 pct3
-    for index, row in ref.iterrows():
-        date, pct = row['date'], row['pct_3']
-        ref_data[date] = pct
-
-    df['ref_pct'] = df['date'].apply(lambda x: ref_data[str(x)])
-    df['ref_pct'] = df['pct3'] - df['ref_pct']
-
-    # df.sort_values('ref_pct', ascending=False)
-    # q10 = df.quantile(.3, numeric_only=True).ref_pct
-    # q90 = df.quantile(.7, numeric_only=True).ref_pct
-    #
-    # def judge(x):
-    #     if x <= q10:
-    #         return 0
-    #     elif x <= q90:
-    #         return 1
-    #     else:
-    #         return 2
-
-    # df['label'] = df['ref_pct'].apply(lambda x: judge(x))
-    # df = df[['date', 'order_book_id', 'pct1', 'ref_pct', 'label']]
-    df = df[['date', 'order_book_id', 'pct1', 'pct3', 'ref_pct']]
-    df.to_csv('./market/deal.csv', index=False, encoding='utf-8')
-
-
-# 处理daydeal数据，筛选需要列表，同时替换对应的股票代号
-def compile_daydeal():
-    df = pd.read_csv('./market/dataset_day_pct2.csv')
-    df = df[['时间', '股票代码', 'pct2', 'ar2']]
-    df.rename(columns={'时间': 'date', '股票代码': 'order_book_id', 'ar2': 'ref_pct'}, inplace=True)
-    with open('./market/id2id.json', 'r+', encoding='utf-8') as file:
-        content = file.read()
-    content = json.loads(content)
-
-    stock_lists = set([k for k, v in content.items()])
-    # 删除参考数据中不存在的股票,并替换存在的代码
-    df = df[df['order_book_id'].isin(stock_lists) == True]
-    df['order_book_id'] = df['order_book_id'].apply(lambda x: content[x])
-
-    def fun(x):
-        tmp = time.strptime(x, "%Y/%m/%d")
-        tmp = time.strftime("%Y-%m-%d", tmp)
-        return tmp
-
-    df['date'] = df['date'].apply(lambda x: fun(x))
-
-    df.to_csv('./market/dataset_day.csv', index=False, encoding='utf-8')
 
 
 # 将每条数据根据股票id拆分
@@ -444,16 +396,15 @@ def concat_stock():
     # 只保留2021，2022年的新闻只保留普通类的新闻
     df = df[df['date'].str.contains('2022|2021')]
 
-    ref = pd.read_csv('./market/deal1.csv')
+    ref = pd.read_csv('./market/deal.csv')
     # ref = pd.read_csv('./market/dataset_day.csv')
     # ref = ref[['date', 'order_book_id', 'label']]
-    ref = ref[['date', 'order_book_id', 'ref_pct', 'pct2']]
     ref.rename(columns={'order_book_id': 'stock_id'}, inplace=1)
     print(len(df), len(ref))
     df = pd.merge(df, ref)
     print('merge two is finished')
     print(len(df), len(ref))
-    df = df[['date', 'publish', 'content', 'stock_id', 'ref_pct', 'pct2']]
+    df = df[['date', 'publish', 'content', 'stock_id', 'ref_pct', 'pct']]
 
     # 去重
     df = df.drop_duplicates(subset=['content'])
@@ -486,7 +437,7 @@ def concat_stock():
     df['publish'] = df['publish'].apply(lambda x: content[x])
 
     df.to_parquet('filter/vnews_stock_split.parquet')
-    print('split is finished')
+    print('concat split is finished')
 
 
 # 根据新闻热度等一系列特征，对新闻进行进一步的筛选过滤
@@ -593,6 +544,7 @@ if __name__ == '__main__':
                   5: 'vnews_nondupbd_wechat.parquet',
                   6: 'vnews_summary_v1.parquet'}
 
+    # 1. 种类预测
     # 数据初步筛选
     # file_pos = 3
     # merge_data()
@@ -605,11 +557,13 @@ if __name__ == '__main__':
     # turn_onehot()
     # add_title()
 
-    # filter_deal()
-    # compile_deal1()
-    # compile_daydeal()
+    # 2. 股票预测
+    filter_deal()
     # split_data()
-    # concat_stock()
+    concat_stock()
+
+    # 暂时不用
     # filter_data2()
     # combine_data2_hot()
-    combine_data2_frequent()
+
+    # combine_data2_frequent()

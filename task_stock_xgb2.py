@@ -1,5 +1,4 @@
 import argparse
-import datetime
 import os
 import pickle
 import time
@@ -11,8 +10,10 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from sklearn import metrics, preprocessing
 from sklearn.metrics import confusion_matrix, f1_score
+from util_hanlp import *
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '4'
+os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+os.environ['JAVA_HOME'] = '/home/zhuzhicheng/java/jdk-20/'
 
 
 def seed_torch(seed=1):
@@ -20,11 +21,11 @@ def seed_torch(seed=1):
     np.random.seed(seed)
 
 
-
 def XGB_model(X_train, Y_train, X_test, Y_test, day):
+    print(len(X_train), len(X_test))
     t_a = time.time()
     param_dist = {
-        'max_depth': [3, 4, 5, 6, 7, 9, 12, 15],
+        'max_depth': [3, 4, 5, ],
         'learning_rate': [0.01, 0.025, 0.05, 0.075],
         'subsample': [0.8, 0.85, 0.9, 0.95],
     }
@@ -76,17 +77,8 @@ def XGB_model(X_train, Y_train, X_test, Y_test, day):
     CM = confusion_matrix(Y_test, predict_Y)
     print('混淆矩阵', CM)
     t_b = time.time()
-    print('cost time {} min'.format((t_b - t_a) / 60))
+    print('cost time {:.1f} min'.format((t_b - t_a) / 60))
     return gsearch.best_score_, F1_SCORE, best_estimator
-
-
-def judge(x, a, b):
-    if x <= a:
-        return 0
-    elif x <= b:
-        return 1
-    else:
-        return 2
 
 
 # 29.17 1e-6
@@ -101,49 +93,48 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     seed_torch(args.seed)
-
+    add_newword()
     # 分层训练
-    df = pd.read_parquet('./filter/vnews_stock_merge2.parquet')
+    data = pd.read_parquet('./filter/vnews_stock_split.parquet')
     # print(len(df))
-    df['date'] = pd.to_datetime(df['date']).dt.date
+    data['date'] = pd.to_datetime(data['date']).dt.date
     # print(df[-100:].head())
 
-    start_date = datetime.date(2022, 5, 17)
-    end_date = datetime.date(2022, 5, 30)
+    start_date = datetime.date(2022, 5, 1)
+    end_date = datetime.date(2022, 6, 30)
     current_date = start_date
     while current_date <= end_date:
         print('*' * 20)
         print('test day is {}'.format(current_date))
-        train_day = current_date - datetime.timedelta(days=90)
+        train_day = current_date - datetime.timedelta(days=30)
 
         # 加载测试
-        tmp = df.copy()
+        tmp = data.copy()
         mask = (tmp['date'] == current_date)
         tmp_data = tmp.loc[mask]
-        tmp_data = tmp_data[['stock_id', 'frquent', 'ref_pct']]
+
         if len(tmp_data) > 1:
             # 加载训练集与验证集
-            tmp = df.copy()
+            tmp = data.copy()
             mask = (tmp['date'] >= train_day) & (tmp['date'] < current_date)
-            tmp_data = tmp.loc[mask]
-            tmp_data = tmp_data[['stock_id', 'frquent', 'ref_pct']]
+            train_data = tmp.loc[mask]
+            train_data.to_parquet('filter/vnews_stock_tmp.parquet')
+            # 获取高频词表
+            hanlp2word(train_data)
+            del train_data
+            # 计算train集词频特征
+            x, y = get_vector('filter/vnews_stock_tmp.parquet', './word_split/output_hanlp.txt', 'train')
 
-            q10 = tmp_data.quantile(.3, numeric_only=True).ref_pct
-            q90 = tmp_data.quantile(.7, numeric_only=True).ref_pct
-            tmp_data['label'] = tmp_data['ref_pct'].apply(lambda x: judge(x, q10, q90))
-            tmp_data.reset_index(drop=True, inplace=True)
+            # 计算test集词频特征
+            # tmp_data.to_parquet('filter/vnews_stock_tmp2.parquet')
+            # del tmp_data
+            # x_test, y_test = get_vector('filter/vnews_stock_tmp2.parquet', './word_split/output_hanlp.txt', 'train')
 
-            lbl = preprocessing.LabelEncoder()
-            tmp_data['label'] = lbl.fit_transform(tmp_data['label'].astype(str))  # 将提示的包含错误数据类型这一列进行转换
-
-            x = tmp_data['frquent'].values.tolist()  # 将列的元素直接转换为列表
-            y = tmp_data['label'].values.tolist()
-
+            # 这里验证机使用的是自身的数据（是否要考虑使用test的数据进行验证）
             x_train, x_val, y_train, y_val = train_test_split(x, y, test_size=0.2, random_state=args.seed)
 
-            print(len(x_train), len(x_val))
-
             XGB_model(x_train, y_train, x_val, y_val, current_date)
+            # XGB_model(x, y, x_test, y_test, current_date)
 
         # break
 

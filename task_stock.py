@@ -15,7 +15,7 @@ import random
 import torch.nn.functional as F
 from sklearn.metrics import f1_score
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 
 def seed_torch(seed=1):
@@ -107,9 +107,9 @@ class News_Stock(nn.Module):
     def __init__(self):
         super().__init__()
         self.bert = AutoModel.from_pretrained(MODEL_CKPT)
-        self.embedding = nn.Embedding(28592, 32)
+        # self.embedding = nn.Embedding(28592, 32)
         self.classifier = nn.Sequential(
-            nn.Linear(800, 256),
+            nn.Linear(768, 256),
             nn.BatchNorm1d(256),
             nn.ReLU(),
             nn.Dropout(0.5),
@@ -126,18 +126,18 @@ class News_Stock(nn.Module):
             bert_output = self.bert(**inputs)
             hidden_state = bert_output.last_hidden_state
             pooled_out = hidden_state[:, 0]
-            key_bedding = self.embedding(publish)
-            all_out = torch.cat([pooled_out, key_bedding], dim=1)
-            # all_out=pooled_out
+            # key_bedding = self.embedding(publish)
+            # all_out = torch.cat([pooled_out, key_bedding], dim=1)
+            all_out = pooled_out
             logits = self.classifier(all_out)
             return logits
         elif mode == 'many':
             bert_output = self.bert(**inputs)
             hidden_state = bert_output.last_hidden_state
             pooled_out = hidden_state[:, 0]
-            key_bedding = self.embedding(publish)
-            all_out = torch.cat([pooled_out, key_bedding], dim=1)
-            # all_out = pooled_out
+            # key_bedding = self.embedding(publish)
+            # all_out = torch.cat([pooled_out, key_bedding], dim=1)
+            all_out = pooled_out
             logits = self.classifier(all_out)
 
             # train or eval
@@ -164,7 +164,7 @@ class News_Stock(nn.Module):
             return output
 
 
-def train(model, train_iter_one, train_iter_many, dev_iter_one, dev_iter_many, args, opt):
+def train(model, train_iter_one, train_iter_many, dev_iter_one, dev_iter_many, args, opt, date):
     best_f1 = float(0)
     cnt = 0  # 记录多久没有模型效果提升
     stop_flag = False  # 早停标签
@@ -254,7 +254,7 @@ def train(model, train_iter_one, train_iter_many, dev_iter_one, dev_iter_many, a
 
         if total_f1 > best_f1:
             best_f1 = total_f1
-            torch.save(model.state_dict(), './model/vnews_stock.pkl')
+            torch.save(model.state_dict(), './model/vnews_stock_bert_{}.pkl'.format(date))
             print('效果提升,保存最优参数')
             cnt = 0
         else:
@@ -268,6 +268,15 @@ def train(model, train_iter_one, train_iter_many, dev_iter_one, dev_iter_many, a
         pass
     else:
         print('训练结束,验证集最高f1:%.2f' % (100 * best_f1))
+
+
+def judge(x, a, b):
+    if x <= a:
+        return 0
+    elif x <= b:
+        return 1
+    else:
+        return 2
 
 
 if __name__ == '__main__':
@@ -349,10 +358,11 @@ if __name__ == '__main__':
     print("device {}".format(device))
 
     # 分层训练
-    df = pd.read_parquet('./filter/vnews_stock.parquet')
-    # df = pd.read_parquet('./filter/vnews_stock_filter.parquet')
+    # df = pd.read_parquet('./filter/vnews_stock.parquet')
+    df = pd.read_parquet('./filter/vnews_stock_merge.parquet')
+
     year = 2022
-    month = 1
+    month = 2
 
     while 1:
         if year == 2022 and month + 3 > 11:
@@ -370,9 +380,17 @@ if __name__ == '__main__':
         # df=df[df['date']]
         tmp = df.copy()
         train_df = tmp[tmp['date'].str.contains(train_month)]
-        train_df = train_df[['publish', 'content', 'label', 'len']]
+        train_df = train_df[['publish', 'content', 'len', 'ref_pct']]
         eval_df = tmp[tmp['date'].str.contains(eval_month)]
-        eval_df = eval_df[['publish', 'content', 'label', 'len']]
+        eval_df = eval_df[['publish', 'content', 'len', 'ref_pct']]
+
+        q10 = train_df.quantile(.3, numeric_only=True).ref_pct
+        q90 = train_df.quantile(.7, numeric_only=True).ref_pct
+        train_df['label'] = train_df['ref_pct'].apply(lambda x: judge(x, q10, q90))
+
+        q10 = eval_df.quantile(.3, numeric_only=True).ref_pct
+        q90 = eval_df.quantile(.7, numeric_only=True).ref_pct
+        eval_df['label'] = eval_df['ref_pct'].apply(lambda x: judge(x, q10, q90))
 
         train_df.reset_index(drop=True, inplace=True)
         eval_df.reset_index(drop=True, inplace=True)
@@ -422,7 +440,7 @@ if __name__ == '__main__':
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=args.LEARNING_RATE, weight_decay=0.5)
 
-        train(model, train_loader1, train_loader2, val_loader1, val_loader2, args, optimizer)
+        train(model, train_loader1, train_loader2, val_loader1, val_loader2, args, optimizer, start)
         # del tmp, train_df, eval_df, train_data1, train_data2, eval_data1, eval_data2
         # torch.cuda.empty_cache()
         break
